@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sizga</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #07050a; overflow: hidden; cursor: pointer; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: 14px; text-align: center;
+    font: 13px/1 system-ui, sans-serif; color: rgba(255,255,255,.35); pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">Qayta boshlash uchun bosing</div>
+
+<script>
+/* ====== SOZLAMALAR: shu yerdan matnlarni o'zgartiring ====== */
+const ENVELOPE_TEXT = 'FOR YOU';   // konvert ustidagi yozuv
+const LOVE_TEXT     = 'I LOVE U';  // atirgul tepasidagi yozuv
+/* =========================================================== */
+
+const N = 110;            // nuqtalar to'ri o'lchami (N x N)
+const P = 4300;           // asosiy zarrachalar soni
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const off = document.createElement('canvas');
+off.width = N; off.height = N;
+const oc = off.getContext('2d', { willReadFrequently: true });
+
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+}
+addEventListener('resize', resize);
+resize();
+
+/* ---------- Rasm chizish (past o'lchamli) va nuqtalarga aylantirish ---------- */
+function sample(drawFn) {
+  oc.clearRect(0, 0, N, N);
+  drawFn(oc);
+  const d = oc.getImageData(0, 0, N, N).data;
+  const out = [];
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const i = (y * N + x) * 4;
+      if (d[i + 3] > 150) out.push({ x, y, c: `rgb(${d[i]},${d[i+1]},${d[i+2]})` });
+    }
+  }
+  return out;
+}
+
+function drawEnvelope(g) {
+  const x0 = 12, y0 = 32, x1 = 98, y1 = 76;
+  g.fillStyle = '#4b5bd6';                       // ko'k hoshiya
+  g.fillRect(x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
+  g.fillStyle = '#e8d6a0';                       // konvert rangi
+  g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  g.strokeStyle = '#2c2216'; g.lineWidth = 1.6;  // X chiziqlar
+  g.beginPath();
+  g.moveTo(x0, y0); g.lineTo(x1, y1);
+  g.moveTo(x1, y0); g.lineTo(x0, y1);
+  g.stroke();
+  g.fillStyle = '#8f5be8';                       // muhr
+  g.beginPath(); g.arc(55, 54, 4.2, 0, Math.PI * 2); g.fill();
+  g.fillRect(53.5, 54, 3, 8);
+  g.fillStyle = '#e8d6a0';                       // yozuv uchun fon
+  g.fillRect(34, 63, 42, 11);
+  g.fillStyle = '#2c2216';
+  g.font = 'bold 11px "Courier New", monospace';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(ENVELOPE_TEXT, 55, 69);
+}
+
+function drawRose(g) {
+  // poya
+  g.strokeStyle = '#45c4ae'; g.lineWidth = 3; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(55, 64); g.quadraticCurveTo(50, 86, 55, 106); g.stroke();
+  // barglar
+  g.fillStyle = '#45c4ae';
+  g.save(); g.translate(46, 88); g.rotate(-0.55);
+  g.beginPath(); g.ellipse(0, 0, 11, 4.2, 0, 0, Math.PI * 2); g.fill(); g.restore();
+  g.save(); g.translate(64, 94); g.rotate(0.5);
+  g.beginPath(); g.ellipse(0, 0, 10, 3.8, 0, 0, Math.PI * 2); g.fill(); g.restore();
+  // gul boshi
+  g.fillStyle = '#dc6a42';
+  g.beginPath(); g.arc(55, 45, 21, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#a63a22'; g.lineWidth = 2; g.lineCap = 'round';
+  g.beginPath(); g.arc(55, 45, 14, 0.2 * Math.PI, 1.75 * Math.PI); g.stroke();
+  g.beginPath(); g.arc(57, 45, 8, 1.1 * Math.PI, 2.45 * Math.PI); g.stroke();
+  g.beginPath(); g.arc(55, 46, 3, 0, Math.PI * 1.5); g.stroke();
+}
+
+function charX(i) { return 55 - (LOVE_TEXT.length * 11) / 2 + i * 11 + 5.5; }
+function textCharTargets(i) {
+  const ch = LOVE_TEXT[i];
+  if (!ch || ch === ' ') return [];
+  return sample(g => {
+    g.fillStyle = '#d9c8ff';
+    g.font = 'bold 16px "Courier New", monospace';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(ch, charX(i), 13);
+  });
+}
+
+/* ---------- Zarrachalar ---------- */
+const parts = [];
+for (let i = 0; i < P; i++) {
+  parts.push({ x: N / 2, y: N / 2, tx: N / 2, ty: N / 2, c: '#fff', sp: 0.03 + Math.random() * 0.06,
+               wait: 0, dust: true, ph: Math.random() * 6.28, text: false });
+}
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function setDust(p) {
+  p.dust = true; p.text = false;
+  p.tx = -25 + Math.random() * (N + 50);
+  p.ty = -25 + Math.random() * (N + 50);
+  p.c = 'rgb(210,200,180)';
+}
+function assign(list) {
+  shuffle(list);
+  for (let i = 0; i < P; i++) {
+    const p = parts[i];
+    if (i < list.length) {
+      const t = list[i];
+      p.dust = false; p.text = false;
+      p.tx = t.x + 0.5; p.ty = t.y + 0.5; p.c = t.c;
+      p.wait = (Math.random() * 25) | 0;
+    } else setDust(p);
+  }
+}
+function addText(list) {
+  const free = parts.filter(p => p.dust);
+  shuffle(free);
+  list.forEach((t, i) => {
+    const p = free[i]; if (!p) return;
+    p.dust = false; p.text = true;
+    p.tx = t.x + 0.5; p.ty = t.y + 0.5; p.c = t.c; p.wait = (Math.random() * 10) | 0;
+  });
+}
+
+/* ---------- Fon yulduzlari ---------- */
+const stars = Array.from({ length: 220 }, () => ({
+  x: Math.random(), y: Math.random(), r: Math.random() * 1.2 + 0.4,
+  ph: Math.random() * 6.28, v: 0.4 + Math.random() * 1.2
+}));
+const streaks = Array.from({ length: 6 }, () => ({
+  x: Math.random(), y: Math.random(), l: 0.05 + Math.random() * 0.1, v: 0.02 + Math.random() * 0.04
+}));
+
+/* ---------- Ketma-ketlik ---------- */
+let scene = 'intro', token = 0;
+function later(fn, ms, t) { setTimeout(() => { if (t === token) fn(); }, ms); }
+
+function start() {
+  const t = ++token;
+  scene = 'intro';
+  parts.forEach(p => { p.x = N / 2; p.y = N / 2; setDust(p); });
+  later(() => { scene = 'envelope'; assign(sample(drawEnvelope)); }, 1400, t);
+  later(() => { scene = 'rose'; assign(sample(drawRose)); }, 5600, t);
+  for (let i = 0; i < LOVE_TEXT.length; i++) {
+    later(() => addText(textCharTargets(i)), 7600 + i * 280, t);
+  }
+}
+addEventListener('pointerdown', start);
+start();
+
+/* ---------- Chizish ---------- */
+let last = performance.now();
+function frame(now) {
+  const time = now / 1000;
+  last = now;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#07050a';
+  ctx.fillRect(0, 0, W, H);
+
+  // yulduzlar
+  for (const s of stars) {
+    const a = 0.25 + 0.75 * Math.abs(Math.sin(time * s.v + s.ph));
+    ctx.fillStyle = `rgba(255,240,215,${a * 0.8})`;
+    ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r, 0, 6.283); ctx.fill();
+  }
+  // ko'k chiziqlar (gul bosqichida)
+  if (scene === 'rose') {
+    ctx.fillStyle = 'rgba(60,110,255,.55)';
+    for (const s of streaks) {
+      s.x += s.v * 0.016; if (s.x > 1.1) { s.x = -0.15; s.y = Math.random(); }
+      ctx.fillRect(s.x * W, s.y * H, s.l * W, 1.5);
+    }
+  }
+
+  // asosiy nuqtalar
+  const S = Math.min(W, H) * 0.92;
+  const cell = S / N;
+  const ox = (W - S) / 2, oy = (H - S) / 2;
+  const dot = cell * 0.78;
+
+  for (const p of parts) {
+    if (p.wait > 0) p.wait--;
+    else {
+      p.x += (p.tx - p.x) * p.sp;
+      p.y += (p.ty - p.y) * p.sp;
+    }
+    if (p.dust) {
+      // sekin suzib yurish
+      p.tx += Math.sin(time * 0.6 + p.ph) * 0.05;
+      p.ty += Math.cos(time * 0.5 + p.ph) * 0.05;
+    }
+    let dx = 0;
+    if (scene === 'rose' && !p.dust && !p.text && p.y > 60) {
+      dx = Math.sin(time * 1.4) * ((p.y - 60) / 46) * 1.1;   // gul poyasi chayqalishi
+    }
+    const px = ox + (p.x + dx) * cell;
+    const py = oy + p.y * cell;
+    if (p.dust) {
+      ctx.globalAlpha = 0.25 + 0.5 * Math.abs(Math.sin(time * 1.5 + p.ph));
+      ctx.fillStyle = p.c;
+      ctx.fillRect(px, py, Math.max(1.2, dot * 0.35), Math.max(1.2, dot * 0.35));
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = p.c;
+      ctx.fillRect(px - dot / 2, py - dot / 2, dot, dot);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
