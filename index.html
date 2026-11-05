@@ -5,31 +5,55 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sizga</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #07050a; overflow: hidden; cursor: pointer; }
+  html, body { margin: 0; height: 100%; background: #07050a; overflow: hidden; }
   canvas { display: block; width: 100%; height: 100%; }
   #hint {
     position: fixed; left: 0; right: 0; bottom: 14px; text-align: center;
-    font: 13px/1 system-ui, sans-serif; color: rgba(255,255,255,.35); pointer-events: none;
+    font: 13px/1 system-ui, sans-serif; color: rgba(255,255,255,.4); pointer-events: none;
+    transition: opacity .6s; opacity: 0;
   }
+  #replay {
+    position: fixed; top: 12px; right: 12px; border: 1px solid rgba(255,255,255,.25);
+    background: rgba(255,255,255,.06); color: rgba(255,255,255,.7);
+    font: 13px system-ui, sans-serif; padding: 8px 14px; border-radius: 20px; cursor: pointer;
+  }
+  #music {
+    position: fixed; top: 12px; left: 12px; border: 1px solid rgba(255,255,255,.25);
+    background: rgba(255,255,255,.06); color: rgba(255,255,255,.7);
+    font: 13px system-ui, sans-serif; padding: 8px 14px; border-radius: 20px; cursor: pointer;
+  }
+  #gate {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 18px; background: #07050a; cursor: pointer; z-index: 10;
+    color: #ffdce9; font: 20px system-ui, sans-serif; transition: opacity .8s;
+  }
+  #gate.hide { opacity: 0; pointer-events: none; }
+  #gate .btn { border: 1px solid #f0407a; padding: 12px 30px; border-radius: 30px; background: rgba(240,64,122,.15); }
+  #replay:focus-visible, #music:focus-visible { outline: 2px solid #ff9ec0; outline-offset: 2px; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hint">Qayta boshlash uchun bosing</div>
+<div id="hint">Ekranni bosing</div>
+<button id="replay" type="button">Qayta boshlash</button>
+<button id="music" type="button">Musiqa: yoqilgan</button>
+<audio id="song" src="song.mp3" loop preload="auto"></audio>
+<div id="gate"><div>Sizga sovg‘a bor</div><div class="btn">Boshlash</div></div>
 
 <script>
 /* ====== SOZLAMALAR: shu yerdan matnlarni o'zgartiring ====== */
 const ENVELOPE_TEXT = 'FOR YOU';   // konvert ustidagi yozuv
-const LOVE_TEXT     = 'I LOVE U';  // atirgul tepasidagi yozuv
+const LOVE_TEXT     = 'I LOVE U';  // yurak tepasidagi yozuv
 /* =========================================================== */
 
-const N = 110;            // nuqtalar to'ri o'lchami (N x N)
-const P = 4300;           // asosiy zarrachalar soni
+const N = 110;
+const P = 4400;
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 const off = document.createElement('canvas');
 off.width = N; off.height = N;
 const oc = off.getContext('2d', { willReadFrequently: true });
+const hint = document.getElementById('hint');
 
 let W = 0, H = 0, DPR = 1;
 function resize() {
@@ -40,7 +64,7 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-/* ---------- Rasm chizish (past o'lchamli) va nuqtalarga aylantirish ---------- */
+/* ---------- Rasm chizish va nuqtalarga aylantirish ---------- */
 function sample(drawFn) {
   oc.clearRect(0, 0, N, N);
   drawFn(oc);
@@ -57,19 +81,18 @@ function sample(drawFn) {
 
 function drawEnvelope(g) {
   const x0 = 12, y0 = 32, x1 = 98, y1 = 76;
-  g.fillStyle = '#4b5bd6';                       // ko'k hoshiya
+  g.fillStyle = '#4b5bd6';
   g.fillRect(x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
-  g.fillStyle = '#e8d6a0';                       // konvert rangi
+  g.fillStyle = '#e8d6a0';
   g.fillRect(x0, y0, x1 - x0, y1 - y0);
-  g.strokeStyle = '#2c2216'; g.lineWidth = 1.6;  // X chiziqlar
+  g.strokeStyle = '#2c2216'; g.lineWidth = 1.6;
   g.beginPath();
   g.moveTo(x0, y0); g.lineTo(x1, y1);
   g.moveTo(x1, y0); g.lineTo(x0, y1);
   g.stroke();
-  g.fillStyle = '#8f5be8';                       // muhr
-  g.beginPath(); g.arc(55, 54, 4.2, 0, Math.PI * 2); g.fill();
-  g.fillRect(53.5, 54, 3, 8);
-  g.fillStyle = '#e8d6a0';                       // yozuv uchun fon
+  g.fillStyle = '#e8506f';                       // yurak shaklidagi muhr
+  heartPath(g, 55, 52, 0.42); g.fill();
+  g.fillStyle = '#e8d6a0';
   g.fillRect(34, 63, 42, 11);
   g.fillStyle = '#2c2216';
   g.font = 'bold 11px "Courier New", monospace';
@@ -77,23 +100,30 @@ function drawEnvelope(g) {
   g.fillText(ENVELOPE_TEXT, 55, 69);
 }
 
-function drawRose(g) {
-  // poya
-  g.strokeStyle = '#45c4ae'; g.lineWidth = 3; g.lineCap = 'round';
-  g.beginPath(); g.moveTo(55, 64); g.quadraticCurveTo(50, 86, 55, 106); g.stroke();
-  // barglar
-  g.fillStyle = '#45c4ae';
-  g.save(); g.translate(46, 88); g.rotate(-0.55);
-  g.beginPath(); g.ellipse(0, 0, 11, 4.2, 0, 0, Math.PI * 2); g.fill(); g.restore();
-  g.save(); g.translate(64, 94); g.rotate(0.5);
-  g.beginPath(); g.ellipse(0, 0, 10, 3.8, 0, 0, Math.PI * 2); g.fill(); g.restore();
-  // gul boshi
-  g.fillStyle = '#dc6a42';
-  g.beginPath(); g.arc(55, 45, 21, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = '#a63a22'; g.lineWidth = 2; g.lineCap = 'round';
-  g.beginPath(); g.arc(55, 45, 14, 0.2 * Math.PI, 1.75 * Math.PI); g.stroke();
-  g.beginPath(); g.arc(57, 45, 8, 1.1 * Math.PI, 2.45 * Math.PI); g.stroke();
-  g.beginPath(); g.arc(55, 46, 3, 0, Math.PI * 1.5); g.stroke();
+/* yurak yo'li: markaz (cx,cy), k - masshtab */
+function heartPath(g, cx, cy, k) {
+  g.beginPath();
+  for (let t = 0; t <= Math.PI * 2 + 0.05; t += 0.05) {
+    const x = 16 * Math.pow(Math.sin(t), 3);
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    const px = cx + x * k, py = cy - y * k;
+    if (t === 0) g.moveTo(px, py); else g.lineTo(px, py);
+  }
+  g.closePath();
+}
+
+const HEART_CX = 55, HEART_CY = 58;
+function drawHeart(g) {
+  const grad = g.createLinearGradient(25, 26, 85, 95);
+  grad.addColorStop(0, '#ff9ec0');
+  grad.addColorStop(0.55, '#f0407a');
+  grad.addColorStop(1, '#b8124a');
+  g.fillStyle = grad;
+  heartPath(g, HEART_CX, HEART_CY - 2, 2.3); g.fill();
+  // yorug' joy
+  g.fillStyle = '#ffd3e3';
+  g.save(); g.translate(40, 40); g.rotate(-0.7);
+  g.beginPath(); g.ellipse(0, 0, 7, 3, 0, 0, Math.PI * 2); g.fill(); g.restore();
 }
 
 function charX(i) { return 55 - (LOVE_TEXT.length * 11) / 2 + i * 11 + 5.5; }
@@ -101,10 +131,10 @@ function textCharTargets(i) {
   const ch = LOVE_TEXT[i];
   if (!ch || ch === ' ') return [];
   return sample(g => {
-    g.fillStyle = '#d9c8ff';
+    g.fillStyle = '#ffdce9';
     g.font = 'bold 16px "Courier New", monospace';
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(ch, charX(i), 13);
+    g.fillText(ch, charX(i), 12);
   });
 }
 
@@ -146,40 +176,101 @@ function addText(list) {
   });
 }
 
-/* ---------- Fon yulduzlari ---------- */
+/* ---------- Fon: yulduzlar, uchar yulduz, suzuvchi yuraklar, portlash ---------- */
 const stars = Array.from({ length: 220 }, () => ({
   x: Math.random(), y: Math.random(), r: Math.random() * 1.2 + 0.4,
   ph: Math.random() * 6.28, v: 0.4 + Math.random() * 1.2
 }));
-const streaks = Array.from({ length: 6 }, () => ({
-  x: Math.random(), y: Math.random(), l: 0.05 + Math.random() * 0.1, v: 0.02 + Math.random() * 0.04
+const floaters = Array.from({ length: 26 }, () => ({
+  x: Math.random(), y: Math.random(), s: 3 + Math.random() * 6,
+  v: 0.03 + Math.random() * 0.05, ph: Math.random() * 6.28,
+  c: ['#ff9ec0', '#f0407a', '#ffd3e3', '#c9a7ff'][(Math.random() * 4) | 0]
 }));
+let shooting = null, nextShoot = 2;
+let bursts = [];
+
+function spawnBurst(x, y) {
+  const cols = ['#ff9ec0', '#ffd3e3', '#f0407a', '#ffe08a', '#c9a7ff'];
+  for (let i = 0; i < 42; i++) {
+    const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 4.5;
+    bursts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: 1,
+                  c: cols[(Math.random() * cols.length) | 0], r: 1.5 + Math.random() * 2 });
+  }
+}
 
 /* ---------- Ketma-ketlik ---------- */
-let scene = 'intro', token = 0;
+let scene = 'intro', token = 0, sceneT0 = 0;
 function later(fn, ms, t) { setTimeout(() => { if (t === token) fn(); }, ms); }
 
 function start() {
   const t = ++token;
-  scene = 'intro';
+  scene = 'intro'; bursts = [];
+  hint.style.opacity = 0;
   parts.forEach(p => { p.x = N / 2; p.y = N / 2; setDust(p); });
   later(() => { scene = 'envelope'; assign(sample(drawEnvelope)); }, 1400, t);
-  later(() => { scene = 'rose'; assign(sample(drawRose)); }, 5600, t);
+  later(() => { scene = 'heart'; sceneT0 = performance.now() / 1000; assign(sample(drawHeart)); }, 5600, t);
   for (let i = 0; i < LOVE_TEXT.length; i++) {
     later(() => addText(textCharTargets(i)), 7600 + i * 280, t);
   }
+  later(() => { hint.style.opacity = 1; }, 7600 + LOVE_TEXT.length * 280 + 600, t);
 }
-addEventListener('pointerdown', start);
-start();
+const song = document.getElementById('song');
+const gate = document.getElementById('gate');
+const musicBtn = document.getElementById('music');
+function updateMusicBtn() { musicBtn.textContent = song.paused ? 'Musiqa: o‘chiq' : 'Musiqa: yoqilgan'; }
+musicBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (song.paused) song.play().catch(() => {}); else song.pause();
+});
+song.addEventListener('play', updateMusicBtn);
+song.addEventListener('pause', updateMusicBtn);
+gate.addEventListener('click', () => {
+  gate.classList.add('hide');
+  song.volume = 0.8;
+  song.play().catch(() => {});      // song.mp3 bo'lmasa ham animatsiya ishlayveradi
+  start();
+});
+document.getElementById('replay').addEventListener('click', e => { e.stopPropagation(); start(); });
+addEventListener('pointerdown', e => {
+  if (e.target.id === 'replay' || e.target.id === 'music') return;
+  if (scene === 'heart') spawnBurst(e.clientX, e.clientY);
+});
 
 /* ---------- Chizish ---------- */
-let last = performance.now();
+function miniHeart(x, y, s) {
+  ctx.beginPath();
+  for (let t = 0; t <= Math.PI * 2 + 0.1; t += 0.2) {
+    const hx = 16 * Math.pow(Math.sin(t), 3);
+    const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    const px = x + hx * s / 16, py = y - hy * s / 16;
+    if (t === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath(); ctx.fill();
+}
+
+let lastT = performance.now() / 1000;
 function frame(now) {
   const time = now / 1000;
-  last = now;
+  const dt = Math.min(0.05, time - lastT); lastT = time;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = '#07050a';
   ctx.fillRect(0, 0, W, H);
+
+  const S = Math.min(W, H) * 0.92;
+  const cell = S / N;
+  const ox = (W - S) / 2, oy = (H - S) / 2;
+  const dot = cell * 0.78;
+
+  // yurak ortidagi nur
+  const age = scene === 'heart' ? Math.min(1, (time - sceneT0) / 2) : 0;
+  const beat = scene === 'heart' ? Math.pow(Math.max(0, Math.sin(time * 3.2)), 8) : 0;
+  if (age > 0) {
+    const gx = ox + HEART_CX * cell, gy = oy + HEART_CY * cell;
+    const gr = ctx.createRadialGradient(gx, gy, 0, gx, gy, S * 0.55);
+    gr.addColorStop(0, `rgba(240,64,122,${(0.28 + beat * 0.18) * age})`);
+    gr.addColorStop(1, 'rgba(240,64,122,0)');
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  }
 
   // yulduzlar
   for (const s of stars) {
@@ -187,21 +278,39 @@ function frame(now) {
     ctx.fillStyle = `rgba(255,240,215,${a * 0.8})`;
     ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r, 0, 6.283); ctx.fill();
   }
-  // ko'k chiziqlar (gul bosqichida)
-  if (scene === 'rose') {
-    ctx.fillStyle = 'rgba(60,110,255,.55)';
-    for (const s of streaks) {
-      s.x += s.v * 0.016; if (s.x > 1.1) { s.x = -0.15; s.y = Math.random(); }
-      ctx.fillRect(s.x * W, s.y * H, s.l * W, 1.5);
+
+  // uchar yulduz
+  nextShoot -= dt;
+  if (!shooting && nextShoot <= 0) {
+    shooting = { x: Math.random() * W * 0.7, y: Math.random() * H * 0.3, life: 1 };
+    nextShoot = 3 + Math.random() * 4;
+  }
+  if (shooting) {
+    shooting.x += 700 * dt; shooting.y += 330 * dt; shooting.life -= dt * 1.4;
+    if (shooting.life <= 0) shooting = null;
+    else {
+      const g2 = ctx.createLinearGradient(shooting.x, shooting.y, shooting.x - 110, shooting.y - 52);
+      g2.addColorStop(0, `rgba(255,255,255,${shooting.life})`);
+      g2.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = g2; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(shooting.x, shooting.y); ctx.lineTo(shooting.x - 110, shooting.y - 52); ctx.stroke();
     }
   }
 
-  // asosiy nuqtalar
-  const S = Math.min(W, H) * 0.92;
-  const cell = S / N;
-  const ox = (W - S) / 2, oy = (H - S) / 2;
-  const dot = cell * 0.78;
+  // suzuvchi yuraklar
+  if (age > 0) {
+    for (const f of floaters) {
+      f.y -= f.v * dt; if (f.y < -0.05) { f.y = 1.05; f.x = Math.random(); }
+      const fx = f.x * W + Math.sin(time + f.ph) * 14;
+      ctx.globalAlpha = 0.55 * age;
+      ctx.fillStyle = f.c;
+      miniHeart(fx, f.y * H, f.s * (W < 600 ? 1.1 : 1.6));
+    }
+    ctx.globalAlpha = 1;
+  }
 
+  // asosiy nuqtalar
+  const hs = 1 + beat * 0.06;
   for (const p of parts) {
     if (p.wait > 0) p.wait--;
     else {
@@ -209,16 +318,16 @@ function frame(now) {
       p.y += (p.ty - p.y) * p.sp;
     }
     if (p.dust) {
-      // sekin suzib yurish
       p.tx += Math.sin(time * 0.6 + p.ph) * 0.05;
       p.ty += Math.cos(time * 0.5 + p.ph) * 0.05;
     }
-    let dx = 0;
-    if (scene === 'rose' && !p.dust && !p.text && p.y > 60) {
-      dx = Math.sin(time * 1.4) * ((p.y - 60) / 46) * 1.1;   // gul poyasi chayqalishi
+    let gx = p.x, gy = p.y;
+    if (scene === 'heart' && !p.dust && !p.text) {
+      gx = HEART_CX + (p.x - HEART_CX) * hs;     // yurak urishi
+      gy = HEART_CY + (p.y - HEART_CY) * hs;
     }
-    const px = ox + (p.x + dx) * cell;
-    const py = oy + p.y * cell;
+    const px = ox + gx * cell;
+    const py = oy + gy * cell;
     if (p.dust) {
       ctx.globalAlpha = 0.25 + 0.5 * Math.abs(Math.sin(time * 1.5 + p.ph));
       ctx.fillStyle = p.c;
@@ -229,6 +338,19 @@ function frame(now) {
       ctx.fillRect(px - dot / 2, py - dot / 2, dot, dot);
     }
   }
+
+  // bosganda otiladigan yulduzchalar
+  for (const b of bursts) {
+    b.x += b.vx; b.y += b.vy; b.vy += 0.09; b.vx *= 0.985; b.life -= dt * 0.8;
+    if (b.life > 0) {
+      ctx.globalAlpha = Math.max(0, b.life);
+      ctx.fillStyle = b.c;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.283); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  bursts = bursts.filter(b => b.life > 0);
+
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
